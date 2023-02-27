@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Iterable
 
 import matplotlib.axes as axes
 import matplotlib.pyplot as pp
@@ -33,7 +34,7 @@ def print_grid(schelling: Schelling, pt: axes.Axes = pp):
     pt.show()
 
 
-def print_data(data: list[int], pt: axes.Axes = pp):
+def print_data(data: Iterable[int], pt: axes.Axes = pp):
     pt.plot(data)
     pt.show()
 
