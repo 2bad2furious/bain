@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Iterable
+from typing import Iterable, Callable
 
 import matplotlib.axes as axes
 import matplotlib.pyplot as pp
@@ -58,26 +58,33 @@ def get_color(schelling: Schelling, coord: Coord) -> str:
             return 'blue'
 
 
+def run_lambda(schelling: Schelling, on_each: Callable[[Schelling], None]):
+    actual = schelling
+    on_each(actual)
+    while not actual.are_all_happy:
+        actual = actual.next()
+        on_each(actual)
+
 def run(schelling: Schelling, top_pct=.95, limit: int = 1000):
     i = 0
 
     crossed_top_pct = False
     count_after_crossed = 0
     stop = False
-    actual: Schelling = schelling
-    while not actual.are_all_happy and count_after_crossed < limit and not stop:
+    actual = schelling
+    while not actual.are_all_happy: #and count_after_crossed < limit and not stop:
         actual = actual.next()
         yield actual
         i += 1
 
-        happy_ratio = actual.happy_ratio
-        if not crossed_top_pct and happy_ratio > top_pct:
-            crossed_top_pct = True
-        elif crossed_top_pct:
-            count_after_crossed += 1
+        # happy_ratio = actual.happy_ratio
+        # if not crossed_top_pct and happy_ratio > top_pct:
+        #     crossed_top_pct = True
+        # elif crossed_top_pct:
+        #     count_after_crossed += 1
 
-        limit_str = "" if count_after_crossed == 0 else f" crossed top {count_after_crossed}/{limit}"
-        print(
-            "rounds " + str(i) + ", happy: " + str(actual.happy_count) + "/" + str(actual.agent_count) + limit_str)
+      #  limit_str = "" if count_after_crossed == 0 else f" crossed top {count_after_crossed}/{limit}"
+        #print(
+     #       "rounds " + str(i) + ", happy: " + str(actual.happy_count) + "/" + str(actual.agent_count) + limit_str)
 
-    print("total rounds = " + str(i))
+    #print("total rounds = " + str(i))

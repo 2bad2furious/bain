@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from functools import cached_property, cache
-from typing import Callable
+from typing import Callable, Generator, Iterable
 
 import numpy as np
 
@@ -17,15 +16,16 @@ class DividedCoords:
         self.unhappy_coords = unhappy_coords
         self.empty_coords = empty_coords
 
-    @cached_property
+    @property
     def happy_count(self):
         return len(self.happy_coords)
 
-    @cached_property
+    @property
     def agent_count(self):
         return self.happy_count + len(self.unhappy_coords)
 
-    def copy_with_changes(self, prev_agent_coord: Coord, new_agent_coord: Coord, is_now_happy: bool) -> DividedCoords:
+    def copy_with_changes(self, prev_agent_coord: Coord, new_agent_coord: Coord,
+                          happy_changes: dict[Coord, bool]) -> DividedCoords:
         unhappy_coords = self.unhappy_coords.copy()
         unhappy_coords.remove(prev_agent_coord)
 
@@ -33,22 +33,25 @@ class DividedCoords:
         empty_coords.remove(new_agent_coord)
         empty_coords.add(prev_agent_coord)
 
-        happy_coords = self.happy_coords
+        happy_coords = self.happy_coords.copy()
 
-        if is_now_happy:
-            happy_coords = happy_coords.copy()
-            happy_coords.add(new_agent_coord)
-        else:
-            unhappy_coords.add(new_agent_coord)
+        for coord, is_now_happy in happy_changes.items():
+            if is_now_happy:
+                happy_coords = happy_coords.copy()
+                happy_coords.add(coord)
+                unhappy_coords.discard(coord)
+            else:
+                unhappy_coords.add(coord)
+                happy_coords.discard(coord)
 
         return DividedCoords(happy_coords, unhappy_coords, empty_coords)
 
-    @cached_property
+    @property
     def are_all_happy(self):
         return not self.unhappy_coords
 
-    @classmethod
-    def from_grid(cls, grid: Grid, is_unhappy: Callable[[Coord], bool]) -> DividedCoords:
+    @staticmethod
+    def from_grid(grid: Grid, is_unhappy: Callable[[Coord], bool]) -> DividedCoords:
         empty_coords = set()
         happy_coords = set()
         unhappy_coords = set()
@@ -108,11 +111,11 @@ class Grid:
         self.arr = arr
         self.empty = empty
 
-    @cached_property
+    @property
     def size(self):
         return self.arr.size
 
-    @cached_property
+    @property
     def shape(self):
         return self.arr.shape
 
@@ -168,28 +171,34 @@ class Schelling:
     def agent_count(self):
         return self._divided_coords.agent_count
 
-    @cached_property
+    @property
     def happy_count(self):
         return len(self._divided_coords.happy_coords)
 
-    @cached_property
+    @property
     def are_all_happy(self) -> bool:
         return self._divided_coords.are_all_happy
 
-    @cached_property
+    @property
     def happy_ratio(self):
         return self.happy_count / self._divided_coords.agent_count
 
-    @cache
     def _ratio(self, c: Coord, grid=None):
         grid = self.grid if grid is None else grid
 
-        shape = grid.shape
         same_agent_count = 1
         total_agent_count = 1
 
         current = grid[c]
+        for coord, agent in self._agents_around(c, grid):
+            total_agent_count += 1
+            if agent == current:
+                same_agent_count += 1
 
+        return same_agent_count / total_agent_count
+
+    def _agents_around(self, c: Coord, grid: Grid) -> Generator[tuple[Coord, Agent]]:
+        shape = grid.shape
         r = range(-self.radius, self.radius + 1)
         for x_diff in r:
             for y_diff in r:
@@ -202,11 +211,7 @@ class Schelling:
 
                 agent = grid[bound_coord]
                 if agent != grid.empty:
-                    total_agent_count += 1
-                    if agent == current:
-                        same_agent_count += 1
-
-        return same_agent_count / total_agent_count
+                    yield bound_coord, agent
 
     def is_unhappy(self, c: Coord) -> bool:
         return c in self._divided_coords.unhappy_coords
@@ -234,6 +239,19 @@ class Schelling:
 
         copy = self.grid.clone_with_switch(new_agent_coord, prev_agent_coord)
 
-        is_now_happy = not self._is_unhappy(new_agent_coord, copy)
-        div_coords = self._divided_coords.copy_with_changes(prev_agent_coord, new_agent_coord, is_now_happy)
+        affected_coords = {new_agent_coord}\
+            .union({c for c, _ in self._agents_around(prev_agent_coord, copy)})\
+            .union({c for c, _ in self._agents_around(new_agent_coord, copy)})
+
+        new_happy = self._calculate_happiness_change_for(affected_coords, copy)
+
+        div_coords = self._divided_coords.copy_with_changes(prev_agent_coord, new_agent_coord, new_happy)
         return Schelling(copy, div_coords, self.rng, self.tol, self.radius)
+
+    def _calculate_happiness_change_for(self, coords: Iterable[Coord], grid: Grid) -> dict[Coord, bool]:
+        res = dict()
+
+        for coord in coords:
+            res[coord] = not self._is_unhappy(coord, grid)
+
+        return res
