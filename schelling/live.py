@@ -9,8 +9,8 @@ from schelling.utils import run, print_grid, print_data
 
 done = False
 
-grid = Grid.generate(ratios=(4.7, 4.7, .6), size=100)
-schelling = Schelling(grid, tol=.7, radius=2)
+grid = Grid.generate(ratios=(4.5, 4.5, 1), size=70)
+schelling = Schelling(grid, tol=.5, radius=2)
 data = ()
 
 print_grid(schelling)
@@ -27,13 +27,13 @@ def run_schelling():
     for s in run(schelling):
         schelling = s
         i += 1
+        data += (schelling.happy_count,)
     done = True
 
 
 def show_scatter():
     while not done:
         print_grid(schelling)
-        time.sleep(1)
 
 
 start = datetime.datetime.now()
@@ -70,6 +70,6 @@ print_data(data)
 
 print(f"started at {start.isoformat()}")
 print(f"ended at {end.isoformat()}")
-print(f"this took {round(delta.total_seconds())} seconds")
+print(f"this took {round(delta.total_seconds())} seconds and {i} rounds")
 
 # run_dash()
