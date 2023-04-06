@@ -28,7 +28,7 @@ pygame.font.init()
 
 WIDTH, HEIGHT = 900, 500
 MAX_DISTANCE = math.sqrt(WIDTH**2 + HEIGHT**2)
-SIMSTEPS = 2000
+SIMSTEPS = 1500
 
 WIN = pygame.display.set_mode((WIDTH, HEIGHT))
 
@@ -366,18 +366,17 @@ def nn_function(inp, wei):
     avoid_closest_mine_direction_degrees = adjust_degrees_for_avg(inp[0])
     closest_mine_distance_ratio = inp[1]
     flag_direction_degress = adjust_degrees_for_avg(inp[2])
-    # avoid_bound_degrees = adjust_degrees_for_avg(inp[3])
+    avoid_bound_degrees = adjust_degrees_for_avg(inp[3])
     # closest_bound_distance = inp[4]
 
     avoid_mine_weight = wei[0] + closest_mine_distance_ratio * wei[1]
     avoid_closest_mine_weighted_degrees = (avoid_closest_mine_direction_degrees * avoid_mine_weight)
     flag_weighted_degrees = (flag_direction_degress * wei[2])
+    #avoid_bound_weighted_degrees = avoid_bound_degrees * wei[3]
 
-    weights_sum = avoid_mine_weight + wei[2]
+    weights_sum = avoid_mine_weight + wei[2] + wei[3]
 
-    avg_deg = (avoid_closest_mine_weighted_degrees + flag_weighted_degrees
-               # + ( avoid_bound_degrees * wei[3])
-               ) / weights_sum
+    avg_deg = (avoid_closest_mine_weighted_degrees + flag_weighted_degrees) / weights_sum
 
     final_deg = adjust_degrees_for_movement(avg_deg)
 
@@ -470,6 +469,9 @@ def handle_mes_movement(mes, mines, flag):
             flag_direction = flag_direction_sensor(me, flag)
             inp.append(flag_direction)
 
+            avoid_bound_direction = avoid_bounds_direction_degrees_sensor(me)
+            inp.append(avoid_bound_direction)
+
             nn_navigate_me(me, inp)
 
 
@@ -492,7 +494,7 @@ def handle_mes_fitnesses(mes, flag: Flag):
     for me in mes:
         fitness = 0
         if me.won:
-            fitness += 1000
+            fitness += 1000 * (SIMSTEPS / me.timealive)
         if not me.won:
             fitness += 300 * (me.timealive / SIMSTEPS)
             fitness += 500 * (distance_between(me, flag) / MAX_DISTANCE)
@@ -516,9 +518,9 @@ def main():
     # =====================================================================
     # <----- ZDE Parametry nastavení evoluce !!!!!
 
-    VELIKOST_POPULACE = 10
+    VELIKOST_POPULACE = 100
     EVO_STEPS = 5  # pocet kroku evoluce
-    DELKA_JEDINCE = 10  # <--------- záleží na počtu vah a prahů u neuronů !!!!!
+    DELKA_JEDINCE = 5  # <--------- záleží na počtu vah a prahů u neuronů !!!!!
     NGEN = 30  # počet generací
     CXPB = 0.6  # pravděpodobnost crossoveru na páru
     MUTPB = 0.2  # pravděpodobnost mutace
@@ -542,7 +544,7 @@ def main():
 
     toolbox.register("mate", tools.cxTwoPoint)
     toolbox.register("mutate", mutRandom, indpb=0.05)
-    toolbox.register("select", tools.selRoulette)
+    toolbox.register("select", tools.selBest)
     toolbox.register("selectbest", tools.selBest)
 
     pop = toolbox.population(n=VELIKOST_POPULACE)
