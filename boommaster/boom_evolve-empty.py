@@ -28,7 +28,7 @@ pygame.font.init()
 
 WIDTH, HEIGHT = 900, 500
 MAX_DISTANCE = math.sqrt(WIDTH**2 + HEIGHT**2)
-SIMSTEPS = 10000
+SIMSTEPS = 2000
 
 WIN = pygame.display.set_mode((WIDTH, HEIGHT))
 
@@ -369,7 +369,7 @@ def nn_function(inp, wei):
     # avoid_bound_degrees = adjust_degrees_for_avg(inp[3])
     # closest_bound_distance = inp[4]
 
-    avoid_mine_weight = wei[0] #+ closest_mine_distance_ratio * wei[1]
+    avoid_mine_weight = wei[0] + closest_mine_distance_ratio * wei[1]
     avoid_closest_mine_weighted_degrees = (avoid_closest_mine_direction_degrees * avoid_mine_weight)
     flag_weighted_degrees = (flag_direction_degress * wei[2])
 
@@ -381,17 +381,21 @@ def nn_function(inp, wei):
 
     final_deg = adjust_degrees_for_movement(avg_deg)
 
+    result = []
+
     if is_around(final_deg, 270):
-        return [DOWN]
+        result.append(DOWN)
 
     if is_around(final_deg, 0) or is_around(final_deg, 360):
-        return [RIGHT]
+        result.append(RIGHT)
 
     if is_around(final_deg, 90):
-        return [UP]
+        result.append(UP)
 
-    return [LEFT]
+    if is_around(final_deg, 180):
+        result.append(LEFT)
 
+    return result
 
 def is_around(deg, target, dist=90) -> bool:
     left = target - dist / 2
@@ -459,7 +463,7 @@ def handle_mes_movement(mes, mines, flag):
             avoid_mine_direction = avoid_closest_mine_direction_sensor(me, closest_mine)
             inp.append(avoid_mine_direction)
 
-            mine_distance_breakpoint = ((1 / 3) * MAX_DISTANCE)
+            mine_distance_breakpoint = ((1 / 5) * MAX_DISTANCE)
             mine_distance_ratio = mine_distance_breakpoint / closest_mine_distance
             inp.append(mine_distance_ratio)
 
@@ -558,7 +562,7 @@ def main():
 
     run = True
 
-    level = 1  # <--- ZDE nastavení obtížnosti počtu min !!!!!
+    level = 3  # <--- ZDE nastavení obtížnosti počtu min !!!!!
     generation = 0
 
     evolving = True
