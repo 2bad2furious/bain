@@ -44,13 +44,14 @@ def pick_random(max_ats: list[int]):
     i = random.randint(0, len(max_ats) - 1)
     return max_ats[i]
 
-def color(g: nx.Graph, k: int, steps: int) -> tuple[list[int], bool, int]:
+def color(g: nx.Graph, k: int, steps: int) -> tuple[list[int], bool, int, int]:
     options = list(range(k))
     cols = np.random.choice(k, len(g.nodes))
     solved = False
     taken_steps = 0
     conflicts = default_conflicts
     min_max_conflicts = sys.maxsize
+    min_conflicts = sys.maxsize
     while not solved and taken_steps < steps:
         max_conflicts = max(conflicts.values())
         max_ats = [k for k,v in conflicts.items() if v == max_conflicts]
@@ -61,5 +62,8 @@ def color(g: nx.Graph, k: int, steps: int) -> tuple[list[int], bool, int]:
         cols = change_cols_at_max(cols, options, max_at, g)
         # conflicts = n_conflicts(g, cols)
         conflicts = n_conflicts(g, cols)
-        solved = len(conflicts) == 0
-    return cols, solved, min_max_conflicts
+        conflicts_count = len(conflicts)
+        if conflicts_count < min_conflicts:
+            min_conflicts = conflicts_count
+        solved = conflicts_count == 0
+    return cols, solved, min_max_conflicts, min_conflicts
