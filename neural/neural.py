@@ -1,16 +1,18 @@
 import tensorflow as tf
 import numpy as np
 
+(train_images, train_img_labels), (test_images, test_img_labels) = tf.keras.datasets.mnist.load_data()
 (train_texts, train_labels), (test_texts, test_labels) = tf.keras.datasets.imdb.load_data()
 
-class_names = sorted(list(set(train_labels)))
-print(class_names)
+train_texts = np.array(train_texts)
+train_labels = np.array(train_labels)
+test_texts = np.array(test_texts)
+test_labels = np.array(test_labels)
 
 
 model = tf.keras.Sequential([
-    tf.keras.layers.Flatten(input_shape=(28, 28)), # transformuje 2D obrazek do 1D vektoru
     tf.keras.layers.Dense(128, activation='sigmoid'),
-    tf.keras.layers.Dense(10)
+    tf.keras.layers.Dense(2)
 ])
 model.compile(optimizer='adam',
               loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),

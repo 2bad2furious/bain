@@ -78,7 +78,7 @@ class Env:
     # start a cíl se nastaví pomocí set_start a set_goal
     # <------    ZDE vlastní metoda
     def path_planner(self) -> pathResult:
-        return self.djikstra()
+        return self.a_star()
 
     def a_star(self) -> pathResult:
         goal = (env.goalx, env.goaly)
@@ -101,15 +101,14 @@ class Env:
                 return q, list(f_score.keys())
 
             for neighbor in env.get_neighbors(current[0], current[1]):
-                tentative_gscore = g_score.get(current) + 0 # weight
+                tentative_gscore = g_score.get(current) + 1 # weight
                 if tentative_gscore < g_score.get(neighbor, math.inf):
                     came_from[neighbor] = current
                     g_score[neighbor] = tentative_gscore
                     f_score[neighbor] = tentative_gscore + h(neighbor)
                     open_set.add(neighbor)
 
-        q = deque()
-        return q, list()
+        # TODO throw error on failure
 
 
     def djikstra(self) -> pathResult:
@@ -171,6 +170,7 @@ class Env:
                     came_from[neighbor] = current
                     options.add(neighbor)
 
+        # TODO throw error on failure
 # třída reprezentující ufo        
 class Ufo:
     def __init__(self, x, y):
@@ -309,7 +309,7 @@ def draw_window(ufo, env):
 
 def main():
     #  <------------   nastavení startu a cíle prohledávání !!!!!!!!!!
-    env.set_start(0, 0)
+    env.set_start(0, 5)
     env.set_goal(9, 7)
 
     p, t = env.path_planner()   # cesta pomocí path_planneru prostředí
