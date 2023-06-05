@@ -75,7 +75,6 @@ VALUE_PREF = {'sedma': 7, 'osma': 8, 'devitka': 9,
               'spodek': 10, 'svrsek': 11, 'kral': 12,
               'desitka': 13, 'eso': 14}
 
-
 # trida karty
 class Card:
     def __init__(self, color, value):
@@ -163,11 +162,12 @@ class Card:
         return self.color + ' ' + self.value
 
     def __eq__(self, other):
-        return isinstance(other,Card) and self.color == other.color and self.value == other.value
+        return isinstance(other, Card) and self.color == other.color and self.value == other.value
 
     def __hash__(self):
         return hash((self.color, self.value))
 
+all_card_options = [Card(b, h) for b in COLORS for h in VALUES]
 
 class Stych:
     def __init__(self, phase, card0, card1, hlaska0, hlaska1, wt):
@@ -704,19 +704,23 @@ def get_last_card_from_stych(history: History, index: int):
 
 
 class MyPlayer(Player):
-    cache = "not_yet"
 
     def play(self, history, phase, trumfcolor, first=True, opcard=None, player_index=0):
         # if im second (no opcard was played), then opponent m
         last_enemy_card = get_last_card_from_stych(history, player_index + 1 % 2)
-        if self.cache == "not_yet":
-            start = datetime.datetime.now()
-            print(f"started creating cache at {start.isoformat()}")
-            self.cache = MMC.create_new(self.hand, trumfcolor, opcard, phase)
-            end = datetime.datetime.now()
-            print(f"ended creating cache at {end.isoformat()}")
 
-        self.cache, move = self.cache.next(last_enemy_card, opcard)
+        start = datetime.datetime.now()
+        print(f"started creating cache at {start.isoformat()}")
+        used_cards_in_history = frozenset([c for s in history.stychy for c in s.cards])
+        filtered_options = list(
+            filter(lambda c: c not in self.hand.cards and c != opcard and c not in used_cards_in_history,
+                   all_card_options))
+
+        cache = MMC.create_new(filtered_options, self.hand, trumfcolor, opcard,last_enemy_card,  phase, depth=2)
+        end = datetime.datetime.now()
+        print(f"ended creating cache at {end.isoformat()}")
+
+        cache, move = cache.next(last_enemy_card, opcard, self.hand)
         card, call = move
         removed = self.hand.removecard(card.color, card.value)
         if not removed:
@@ -739,9 +743,15 @@ class Card_move:
         self.is_calling = card.value == "sasek" and has_king_of(hand, card.color)
         self.points = points
 
+
 def all_hands_with(card_options: List[Card], card: Card) -> Iterable[Hand]:
-    hand_cards = combinations(card_options, 4)
-    return map(lambda cards: Hand(list(cards) + [card]), hand_cards)
+    size = 4
+    if len(card_options) < size:
+        return [Hand(list(card_options) + [card])]
+
+    hand_cards = combinations(card_options, size)
+    return list(map(lambda cards: Hand(list(cards) + [card]), hand_cards))
+
 
 def all_hands(card_options: List[Card]) -> Iterable[Hand]:
     size = 5
@@ -793,38 +803,38 @@ class Compound_moves:
 def register_move_calculating():
     global calculating_moves
     calculating_moves += 1
-    if calculating_moves % 100_000 == 0:
+    if calculating_moves % 1_000 == 0:
         print(f"Moves {calculating_moves:_}")
 
 
 class MMC:
 
-    def __init__(self, next_cache_for_play: dict[Tuple[Card | None, Card | None], Card_move], points: int):
+    def __init__(self, next_cache_for_play: dict[Tuple[Card | None, Card | None, frozenset[Card]], Card_move],
+                 points: int):
         self.next_cache_for_play = next_cache_for_play
         self.points = points
 
-    def __getitem__(self, item: Tuple[Card | None, Card | None]) -> Card_move | None:
+    def __getitem__(self, item: Tuple[Card | None, Card | None, frozenset[Card]]) -> Card_move | None:
         return self.next_cache_for_play[item]
 
-    def next(self, last_enemy_card: Card | None, opcard: Card | None):
-        max_move = self[last_enemy_card, opcard]
+    def next(self, last_enemy_card: Card | None, opcard: Card | None, hand: Hand):
+        cards = frozenset(hand.cards)
+        max_move = self[last_enemy_card, opcard, cards]
 
         return max_move.next_cache, (max_move.card, max_move.is_calling)
 
     @staticmethod
     # for eliminating cards from opponent's possible cards
-    def create_new(hand: Hand, trumfcolor: str, opcard: Card | None, phase: int) -> MMC:
-        all_card_options = [Card(b, h) for b in COLORS for h in VALUES]
-        filtered_options = list(filter(lambda c: c not in hand.cards and c != opcard, all_card_options))
-
-
+    def create_new(filtered_options: List[Card], hand: Hand, trumfcolor: str, opcard: Card | None,last_enemy_card: Card | None, phase: int,
+                   depth: int) -> MMC:
+        # TODO fix wrong hand prediction when we have less than 5
         # if player is starting we want to get max first, otherwise we want min first
         if opcard is None:
             possible_hands = all_hands(filtered_options)
 
             maximum = None
             for enemy_hand in possible_hands:
-                mmc = MMC.create_max_first(filtered_options, enemy_hand, hand, opcard, trumfcolor, phase)
+                mmc = MMC.create_max_first(filtered_options, enemy_hand, hand, opcard, trumfcolor, phase, depth)
                 if maximum is None or mmc.points > maximum.points:
                     maximum = mmc
 
@@ -834,19 +844,19 @@ class MMC:
 
         possible_hands = all_hands_with(filtered_options, opcard)
         for enemy_hand in possible_hands:
-            mmc = MMC.create_min_first(filtered_options, enemy_hand, hand, None, trumfcolor, phase)
+            mmc = MMC.create_min_first(filtered_options, enemy_hand, hand, last_enemy_card, trumfcolor, phase, depth)
             if minimal is None or mmc.points < minimal.points:
                 minimal = mmc
         return minimal
 
     @staticmethod
     def create_min_first(card_options: List[Card], enemy_player_hand: Hand, my_player_hand: Hand,
-                         last_enemy_card: Card | None, trumfcolor: str, phase: int) -> MMC:
+                         last_enemy_card: Card | None, trumfcolor: str, phase: int, depth: int) -> MMC:
         register_move_calculating()
         if len(card_options) == 0:
             phase = 1
 
-        if enemy_player_hand.isempty() or my_player_hand.isempty():
+        if enemy_player_hand.isempty() or my_player_hand.isempty() or depth <= 0:
             return MMC({}, 0)
 
         moves: dict[Tuple[Card, frozenset[Card]], Compound_moves] = {}
@@ -865,7 +875,7 @@ class MMC:
                         moves[(card, cards_set)] = Compound_moves()
 
                     move = MMC.create_max_second(available_cards_for_next_round, hand, my_new_hand, trumfcolor, card,
-                                                 phase)
+                                                 phase, depth)
                     moves[(card, cards_set)].add_move(move)
 
         min_points = None
@@ -874,17 +884,17 @@ class MMC:
             if min_points is None or value < min_points:
                 min_points = value
 
-        res_moves = {(last_enemy_card, c, m.hand): ms.get_best() for (c, ms) in moves.items() for m in ms.moves}
+        res_moves = {(last_enemy_card, c[0], m.hand): ms.get_best() for (c, ms) in moves.items() for m in ms.moves}
         return MMC(res_moves, min_points)
 
     @staticmethod
     def create_max_first(card_options: List[Card], enemy_player_hand: Hand, my_player_hand: Hand,
-                         last_enemy_card: Card | None, trumfcolor: str, phase: int) -> MMC:
+                         last_enemy_card: Card | None, trumfcolor: str, phase: int, depth: int) -> MMC:
         register_move_calculating()
         if len(card_options) == 0:
             phase = 1
 
-        if enemy_player_hand.isempty() or my_player_hand.isempty():
+        if enemy_player_hand.isempty() or my_player_hand.isempty() or depth <= 0:
             return MMC({}, 0)
 
         moves: dict[frozenset[Card], Compound_moves] = {}
@@ -903,7 +913,7 @@ class MMC:
                         moves[cards_set] = Compound_moves()
 
                     move = MMC.create_min_second(available_cards_for_next_round, enemy_new_hand, hand, trumfcolor, card,
-                                                 phase)
+                                                 phase, depth)
                     moves[cards_set].add_move(move)
 
         max_points = None
@@ -918,7 +928,7 @@ class MMC:
     @staticmethod
     def create_min_second(card_options: List[Card], enemy_hand: Hand, my_player_hand: Hand,
                           trumfcolor: str,
-                          opcard: Card, phase: int) -> Card_move:
+                          opcard: Card, phase: int, depth: int) -> Card_move:
 
         best_move_for_hand: Card_move | None = None
         new_enemy_hands = create_hands_list(enemy_hand, card_options)
@@ -928,10 +938,9 @@ class MMC:
                 enemy_wins, points_change_for_me = calc_points(opcard, my_player_hand, card, new_enemy_hand, phase,
                                                                trumfcolor)
 
-
                 fn = MMC.create_min_first if enemy_wins else MMC.create_max_first
                 next_mmc = fn(card_options, new_enemy_hand.without_card(card),
-                              my_player_hand.without_card(opcard), card, trumfcolor, phase)
+                              my_player_hand.without_card(opcard), card, trumfcolor, phase, depth - 1)
                 total_points = next_mmc.points + points_change_for_me
                 if best_move_for_hand is None or total_points > best_move_for_hand.points:
                     best_move_for_hand = Card_move(next_mmc, opcard, frozenset(my_player_hand.cards), total_points)
@@ -941,7 +950,7 @@ class MMC:
     @staticmethod
     def create_max_second(card_options: List[Card], enemy_hand: Hand, my_player_hand: Hand,
                           trumfcolor: str,
-                          opcard: Card, phase: int) -> Card_move:
+                          opcard: Card, phase: int, depth: int) -> Card_move:
 
         best_move_for_hand: Card_move | None = None
         new_my_player_hands = create_hands_list(my_player_hand, card_options)
@@ -953,7 +962,8 @@ class MMC:
                                                                   trumfcolor)
 
                 fn = MMC.create_min_first if enemy_wins else MMC.create_max_first
-                next_mmc = fn(card_options, enemy_hand.without_card(opcard), new_my_player_hand.without_card(card), opcard, trumfcolor, phase)
+                next_mmc = fn(card_options, enemy_hand.without_card(opcard), new_my_player_hand.without_card(card),
+                              opcard, trumfcolor, phase, depth - 1)
                 total_points = next_mmc.points - points_change_for_enemy
                 if best_move_for_hand is None or total_points > best_move_for_hand.points:
                     best_move_for_hand = Card_move(next_mmc, card, frozenset(new_my_player_hand.cards), total_points)
