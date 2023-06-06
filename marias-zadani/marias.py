@@ -300,7 +300,7 @@ class Hand:
             c.disp()
 
     # returns valid card moves to opcard
-    def validcardmoves(self, opcard, phase, trumfcolor) -> List[Card]:
+    def validcardmoves(self, opcard: Card | None, phase, trumfcolor) -> List[Card]:
         # opcard.disp()
         # print("---")
         # print(phase)
@@ -461,8 +461,8 @@ class Marias:
         self.talon = Talon(cards)
         self.talon.shuffle()
         # print(self.talon.cards)
-        self.player0 = Player(0, 'Tunta')
-        self.player1 = MyPlayer(1, 'Punta')
+        self.player0 = MyPlayer(0, 'Punta')
+        self.player1 = Player(1, 'Tunta')
 
         # rozdej
         for i in range(5):
@@ -705,20 +705,25 @@ def get_last_card_from_stych(history: History, index: int):
 
 class MyPlayer(Player):
 
-    def play(self, history, phase, trumfcolor, first=True, opcard=None, player_index=0):
-        # if im second (no opcard was played), then opponent m
-        last_enemy_card = get_last_card_from_stych(history, player_index + 1 % 2)
 
+
+    def __init__(self, num, name, depth=2):
+        super().__init__(num, name)
+        self.depth = depth
+
+    def play(self, history, phase, trumfcolor, first=True, opcard=None, player_index=0):
         start = datetime.datetime.now()
-        print(f"started creating cache at {start.isoformat()}")
+        print(f"started calculating move at {start.isoformat()}")
         used_cards_in_history = frozenset([c for s in history.stychy for c in s.cards])
         filtered_options = list(
             filter(lambda c: c not in self.hand.cards and c != opcard and c not in used_cards_in_history,
                    all_card_options))
 
-        move = MMC.create_new(filtered_options, self.hand.copy(), trumfcolor, opcard, phase, depth=1)
+        move = MMC.next_move(filtered_options, self.hand.copy(), trumfcolor, opcard, phase, depth=self.depth)
         end = datetime.datetime.now()
-        print(f"ended creating cache at {end.isoformat()}")
+        print(f"ended calculating move at {end.isoformat()}")
+        global calculating_moves
+        calculating_moves = 0
         card = move.card
         call = move.is_calling
         removed = self.hand.removecard(card.color, card.value)
@@ -769,7 +774,7 @@ def all_hands(card_options: List[Card]) -> Iterable[Hand]:
     return map(lambda cards: Hand(cards), hand_cards)
 
 
-def create_hands_list(hand: Hand, card_options: List[Card]) -> Iterable[Hand]:
+def create_hands_list(hand: Hand, card_options: List[Card]) -> List[Hand]:
     if len(hand.cards) == 5 or len(card_options) == 0:
         return [hand.copy()]
 
@@ -798,67 +803,120 @@ def card_options_without(card_options: List[Card], card: Card):
     return list(filter(lambda c: c != card, card_options))
 
 
+def create_hand_options(hand: Hand, card_options: List[Card], phase: int) -> List[Hand]:
+    if phase == 1:
+        return [hand]
+
+    result = []
+    for card in card_options:
+        result.append(Hand(hand.cards + [card]))
+    return result
+
+
+def avg_repeated(values: List[Tuple[float, int]], avg: float = 0.0, count: int = 0) -> Tuple[float, int]:
+    for value in values:
+        avg_value, avg_count = value
+        for _ in range(avg_count):
+            count += 1
+            avg = (avg_value - avg) / count
+    return avg, count
+
+
 class MMC:
 
     @staticmethod
-    def next_turn(wins: bool, phase: int, card_options: List[Card], depth: int) -> float:
+    def _next_turn(wins: bool, phase: int, trumfcolor: str, hand: Hand, card_options: List[Card], depth: int) -> Tuple[
+        float,
+        int]:
+        register_move_calculating()
         if len(card_options) == 0 or depth <= 1:
-            return 0
+            return 0, 0
+
+        if len(card_options) <= 5:
+            phase = 1
 
         if wins:
-            pass
+            count = 0
+            avg = 0
+            hands = create_hand_options(hand, card_options, phase)
+            for hand in hands:
+                for card in hand.validcardmoves(None, phase, trumfcolor):
+                    card_options_without_card = card_options_without_those_in_hand(card_options, hand)
+                    turn_avg, turn_count = MMC._make_first_move(card_options_without_card, hand, card, trumfcolor, phase, depth - 1)
+                    avg, count = avg_repeated([(turn_avg, turn_count)], avg, count)
+
+            return avg, count
+
+        avg = 0
+        count = 0
+        for opcard in card_options:
+            card_options_without_opcard = card_options_without(card_options, opcard)
+            hands = create_hands_list(hand, card_options_without_opcard)
+            for hand in hands:
+                validcards = hand.validcardmoves(opcard, phase, trumfcolor)
+                for card in validcards:
+                    new_card_options = card_options_without(card_options_without_opcard, card)
+                    new_hand = hand.without_card(card)
+                    turn_avg, turn_count = MMC._make_answer_move(new_card_options, new_hand, card, opcard, trumfcolor,
+                                                                 phase, depth - 1)
+                    avg, count = avg_repeated([(turn_avg, turn_count)], avg, count)
+        return avg, count
 
     @staticmethod
     # for eliminating cards from opponent's possible cards
-    def create_new(filtered_options: List[Card], hand: Hand, trumfcolor: str, opcard: Card | None, phase: int,
-                   depth: int) -> Card_move:
+    def next_move(filtered_options: List[Card], hand: Hand, trumfcolor: str, opcard: Card | None, phase: int,
+                  depth: int) -> Card_move:
+
+        if len(filtered_options) <= 5:
+            phase = 1
         # TODO fix wrong hand prediction when we have less than 5
         # if player is starting we want to get max first, otherwise we want min first
+
         if opcard is None:
-            make_move = lambda card: MMC.make_first_move(filtered_options, hand, card, trumfcolor, phase, depth)
+            make_move = lambda card: MMC._make_first_move(filtered_options,
+                                                          hand.without_card(card), card, trumfcolor, phase, depth)
         else:
-            make_move = lambda card: MMC.make_answer_move(filtered_options, hand, card, opcard, trumfcolor,
-                                                          phase, depth)
+            make_move = lambda card: MMC._make_answer_move(filtered_options,
+                                                           hand.without_card(card), card, opcard, trumfcolor,
+                                                           phase, depth)
 
         maximum = None
         for card in hand.validcardmoves(opcard, phase, trumfcolor):
-            points = make_move(card)
+            points, _ = make_move(card)
             if maximum is None or points > maximum.points:
                 maximum = Evaluated_move(card, points)
 
         return maximum.with_calling_based_on(hand)
 
     @staticmethod
-    def make_first_move(card_options: List[Card], hand: Hand, card: Card, trumfcolor: str, phase: int,
-                        depth: int) -> float:
-        if len(card_options) <= 5:
-            phase = 1
+    def _make_first_move(card_options: List[Card], hand: Hand, card: Card, trumfcolor: str, phase: int,
+                         depth: int) -> Tuple[float, int]:
 
         count = 0
         avg = 0
-        # new_player_hand = hand.without_card(card)
-        opponent_options = card_options_without(card_options, card)
-        valid_opcards = Hand(opponent_options).validcardmoves(None, phase, trumfcolor)
+        valid_opcards = Hand(card_options).validcardmoves(None, phase, trumfcolor)
         for opcard in valid_opcards:
             count += 1
             wins, turn_score = calc_points(card, hand, opcard, phase, trumfcolor)
-            next_turn_score = 0  # MMC.next_turn(wins, phase, new_player_hand, card_options, depth)
-            score = next_turn_score + turn_score
-            avg += (score / count)
+            card_options_without_opcard = card_options_without(card_options, opcard)
+            next_turn_score, next_turn_score_weight = MMC._next_turn(wins, phase, trumfcolor, hand,
+                                                                     card_options_without_opcard, depth)
+            avg, count = avg_repeated([(next_turn_score, next_turn_score_weight), (turn_score, 1)], avg, count)
 
-        return avg
+        return avg, count
 
     @staticmethod
-    def make_answer_move(card_options: List[Card], hand: Hand, card: Card, opcard: Card, trumfcolor: str,
-                         phase: int, depth: int) -> float:
+    def _make_answer_move(card_options: List[Card], hand: Hand, card: Card, opcard: Card, trumfcolor: str,
+                          phase: int, depth: int) -> Tuple[float, int]:
         if len(card_options) <= 5:
             phase = 1
 
         wins, turn_score = calc_points(card, hand, opcard, phase, trumfcolor)
-        next_turn_score = 0
-        score = next_turn_score + turn_score
+        next_turn_score, next_turn_score_weight = MMC._next_turn(wins, phase, trumfcolor, hand, card_options,
+                                                                 depth)
+        avg, count = avg_repeated([(next_turn_score, next_turn_score_weight)])
 
-        return score
+        return avg, count
 
 
 if __name__ == "__main__":
