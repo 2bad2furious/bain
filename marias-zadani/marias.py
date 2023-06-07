@@ -388,14 +388,14 @@ class Player:
                 cm = self.hand.validcardmoves(None, phase, trumfcolor)
 
                 # tisk validnich tahu
-                print("====================================")
-                print("Hrac:", self.name, "===============")
-                print("------ Ma v ruce:")
-                for c in self.hand.cards:
-                    print(c)
-                print("------ Muze hrat")
-                for c in cm:
-                    print(c)
+                #print("====================================")
+                #print("Hrac:", self.name, "===============")
+                #print("------ Ma v ruce:")
+               # for c in self.hand.cards:
+                #    print(c)
+                #print("------ Muze hrat")
+                #for c in cm:
+                #    print(c)
 
                 c = self.hand.chooserandom(self.hand.cards)
 
@@ -411,14 +411,14 @@ class Player:
                 cm = self.hand.validcardmoves(opcard, phase, trumfcolor)
 
                 # tisk validnich tahu
-                print("====================================")
-                print("Hrac:", self.name, "===============")
-                print("------ Ma v ruce:")
-                for c in self.hand.cards:
-                    print(c)
-                print("------ Muze hrat")
-                for c in cm:
-                    print(c)
+                #print("====================================")
+                #print("Hrac:", self.name, "===============")
+                #print("------ Ma v ruce:")
+                #for c in self.hand.cards:
+                #    print(c)
+                #print("------ Muze hrat")
+                #for c in cm:
+                 #   print(c)
 
                 c = self.hand.chooserandom(cm)
 
@@ -461,7 +461,7 @@ class Marias:
         self.talon = Talon(cards)
         self.talon.shuffle()
         # print(self.talon.cards)
-        self.player0 = MyPlayer(0, 'Punta')
+        self.player0 = MyPlayer(0, 'My AI')
         self.player1 = Player(1, 'Tunta')
 
         # rozdej
@@ -668,6 +668,7 @@ def draw_window(marias):
 
 # hlavni smycka hry
 def main():
+
     marias = Marias()
 
     clock = pygame.time.Clock()
@@ -702,33 +703,40 @@ def get_last_card_from_stych(history: History, index: int):
     except IndexError:
         return None
 
+def get_depth(len: int)->int:
+    if len > 10:
+        return 2
+    if len > 7:
+        return 3
+    #if len > 6:
+    #    return 4
+    return 5
 
 class MyPlayer(Player):
 
 
 
-    def __init__(self, num, name, depth=2):
+    def __init__(self, num, name):
         super().__init__(num, name)
-        self.depth = depth
+
 
     def play(self, history, phase, trumfcolor, first=True, opcard=None, player_index=0):
         start = datetime.datetime.now()
-        print(f"started calculating move at {start.isoformat()}")
+        #print(f"started calculating move at {start.isoformat()}")
         used_cards_in_history = frozenset([c for s in history.stychy for c in s.cards])
         filtered_options = list(
             filter(lambda c: c not in self.hand.cards and c != opcard and c not in used_cards_in_history,
                    all_card_options))
 
-        move = MMC.next_move(filtered_options, self.hand.copy(), trumfcolor, opcard, phase, depth=self.depth)
+        move = MMC.next_move(filtered_options, self.hand.copy(), trumfcolor, opcard, phase, depth=get_depth(len(filtered_options)))
         end = datetime.datetime.now()
-        print(f"ended calculating move at {end.isoformat()}")
+        #print(f"ended calculating move at {end.isoformat()}")
         global calculating_moves
         calculating_moves = 0
         card = move.card
         call = move.is_calling
         removed = self.hand.removecard(card.color, card.value)
-        if not removed:
-            print(card, self.hand)
+
         return card, call
 
 
@@ -791,8 +799,8 @@ def card_options_without_those_in_hand(card_options: List[Card], hand: Hand) -> 
 def register_move_calculating():
     global calculating_moves
     calculating_moves += 1
-    if calculating_moves % 1_000 == 0:
-        print(f"Moves {calculating_moves:_}")
+    #if calculating_moves % 1_000 == 0:
+        #print(f"Moves {calculating_moves:_}")
 
 
 def card_options_without_any(card_options: List[Card], cards: List[Card]):
@@ -818,7 +826,7 @@ def avg_repeated(values: List[Tuple[float, int]], avg: float = 0.0, count: int =
         avg_value, avg_count = value
         for _ in range(avg_count):
             count += 1
-            avg = (avg_value - avg) / count
+            avg += (avg_value - avg) / count
     return avg, count
 
 
@@ -920,4 +928,22 @@ class MMC:
 
 
 if __name__ == "__main__":
-    main()
+    total_games = 0
+    wins = 0
+    avg_ratio = 0
+    for _ in range(10_000):
+        marias = Marias()
+        while not marias.isdone():
+            marias.play()
+        total_games += 1
+        ratio = 10 if marias.player1points == 0 else marias.player0points / marias.player1points
+        print(f"game over {marias.player0.name}:{marias.player0points} vs {marias.player1.name}:{marias.player1points} ", end="")
+        if ratio >= 1:
+            wins += 1
+            print("win")
+        else:
+            print("loss")
+
+        avg_ratio += ((ratio - avg_ratio) / total_games)
+        print(f"avg_ratio {avg_ratio}")
+        print(f"wins {wins}/{total_games} total games - {(wins/total_games)*100}% WR")
